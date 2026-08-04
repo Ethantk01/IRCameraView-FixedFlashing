@@ -155,6 +155,16 @@ ImageBorder.CornerRadius = new CornerRadius(0);
                 camera.FrameFilter = (IRFrameFilter)comboBox.SelectedIndex;
         }
 
+        private void SensitivitySlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (camera != null) camera.Sensitivity = e.NewValue;
+        }
+
+        private void MergeFramesCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (camera != null) camera.MergeFrames = MergeFramesCheckBox.IsChecked ?? false;
+        }
+
         private void DeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (camera == null) return;
