@@ -75,6 +75,9 @@
                         <ComboBoxItem>Dark</ComboBoxItem>
                         <ComboBoxItem>Illuminated</ComboBoxItem>
                     </ComboBox>
+                    <TextBlock Text="Sensitivity" VerticalAlignment="Center"/>
+                    <Slider x:Name="SensitivitySlider" Minimum="0" Maximum="1" StepFrequency="0.05" Value="0.5" Width="120" ValueChanged="SensitivitySlider_ValueChanged" VerticalAlignment="Center"/>
+                    <CheckBox x:Name="MergeFramesCheckBox" Content="Merge light/dark frames" Checked="MergeFramesCheckBox_Changed" Unchecked="MergeFramesCheckBox_Changed" VerticalAlignment="Center"/>
                     <TextBlock Text="Vision" VerticalAlignment="Center"/>
                     <ComboBox SelectedIndex="0" SelectionChanged="ComboBox_SelectionChanged" VerticalAlignment="Center">
                         <ComboBoxItem>Standard</ComboBoxItem>
