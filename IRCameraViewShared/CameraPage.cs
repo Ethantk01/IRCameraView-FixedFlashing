@@ -41,13 +41,38 @@ namespace IRCameraView
         public CameraPage()
         {
             InitializeComponent();
-            camera = new CameraController();
             StartCapture();
+
+            if (camera.InitializationFailed)
+            {
+                // Don't let a missing/unavailable camera take the whole app down. Show the
+                // problem and leave the rest of the UI in its default (disabled-ish) state
+                // instead of touching camera.Controller etc. below, which would throw.
+                _ = ShowCameraErrorAsync(camera.InitializationError ?? "No camera could be started.");
+                return;
+            }
+
             ReloadDevices();
 #if NETFX_CORE
 #else
             PreviewModeBox.SelectedIndex = 1;
 #endif
+        }
+
+        private async Task ShowCameraErrorAsync(string message)
+        {
+            try
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "Camera unavailable",
+                    Content = message,
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot
+                };
+                await dialog.ShowAsync();
+            }
+            catch { }
         }
 
         public Grid GetTitleBar()
@@ -165,15 +190,32 @@ ImageBorder.CornerRadius = new CornerRadius(0);
             if (camera != null) camera.MergeFrames = MergeFramesCheckBox.IsChecked ?? false;
         }
 
-        private void DeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void DeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (camera == null) return;
-            if (DeviceComboBox.SelectedIndex >= 0)
+            if (DeviceComboBox.SelectedIndex < 0) return;
+
+            try
+            {
                 camera.SelectDeviceByIndex(DeviceComboBox.SelectedIndex);
+            }
+            catch (Exception ex)
+            {
+                // Switching devices can legitimately fail (camera busy, unsupported mode,
+                // etc.) - report it instead of letting it crash the app as an unhandled
+                // exception from an event handler.
+                await ShowCameraErrorAsync($"Couldn't switch camera: {ex.Message}");
+            }
         }
 
         private async void TakePhoto_Click(object sender, RoutedEventArgs e)
         {
+            // Nothing to capture yet if no frame has arrived (e.g. camera failed to start,
+            // or the button is pressed in the first instant after launch). CaptureImage would
+            // otherwise pass a null bitmap into SoftwareBitmap.Copy and throw synchronously,
+            // crashing the app since this is an unhandled exception in a click handler.
+            if (camera?.LatestBitmap == null) return;
+
             camera.CaptureImage();
             FlashScreenAsync();
         }
@@ -273,16 +315,28 @@ ImageBorder.CornerRadius = new CornerRadius(0);
 
         private void PhotoModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            camera.Controller.AdvancedPhotoControl.Configure(new AdvancedPhotoCaptureSettings
+            if (camera?.Controller == null || PhotoModeBox.SelectedItem == null) return;
+
+            try
             {
-                Mode = (PhotoModeBox.SelectedItem as AdvancedPhotoMode?) ?? AdvancedPhotoMode.Standard
-            });
+                camera.Controller.AdvancedPhotoControl.Configure(new AdvancedPhotoCaptureSettings
+                {
+                    Mode = (PhotoModeBox.SelectedItem as AdvancedPhotoMode?) ?? AdvancedPhotoMode.Standard
+                });
+            }
+            catch { }
         }
 
         private void IRTorchBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            var selectedMode = (IRTorchBox.SelectedItem as InfraredTorchMode?) ?? InfraredTorchMode.AlternatingFrameIllumination;
-            camera.Controller.InfraredTorchControl.CurrentMode = selectedMode;
+            if (camera?.Controller == null || IRTorchBox.SelectedItem == null) return;
+
+            try
+            {
+                var selectedMode = (IRTorchBox.SelectedItem as InfraredTorchMode?) ?? InfraredTorchMode.AlternatingFrameIllumination;
+                camera.Controller.InfraredTorchControl.CurrentMode = selectedMode;
+            }
+            catch { }
         }
 
         MediaFrameSourceKind GetSelectedCameraKind()
@@ -296,10 +350,17 @@ ImageBorder.CornerRadius = new CornerRadius(0);
             }
         }
 
-        private void CameraType_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void CameraType_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            camera?.LoadCameras(GetSelectedCameraKind());
-            ReloadDevices();
+            try
+            {
+                camera?.LoadCameras(GetSelectedCameraKind());
+                ReloadDevices();
+            }
+            catch (Exception ex)
+            {
+                await ShowCameraErrorAsync($"Couldn't load cameras: {ex.Message}");
+            }
         }
     }
 }
