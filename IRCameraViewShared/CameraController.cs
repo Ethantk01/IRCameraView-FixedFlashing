@@ -112,15 +112,36 @@ namespace IRCameraView
 		private int _mergeWidth;
 		private int _mergeHeight;
 
+		// True once construction has finished enumerating cameras without error. CameraPage
+		// checks this (and Devices.Count) instead of the constructor throwing, since a thrown
+		// constructor exception during Page navigation is unhandled by WinUI/UWP and crashes
+		// the whole app on launch - e.g. on any machine without an infrared camera.
+		public bool InitializationFailed { get; private set; }
+		public string? InitializationError { get; private set; }
+
 		public CameraController()
 		{
 			FrameFilter = IRFrameFilter.None;
 			MappingMode = IRMappingMode.None;
 			MediaCapture = null;
-			LoadCameras(MediaFrameSourceKind.Infrared);
+			Devices = new List<MediaFrameSourceGroup>();
 
-			if (Devices?.Count == 0)
-				throw new Exception("No infrared cameras were found.");
+			try
+			{
+				LoadCameras(MediaFrameSourceKind.Infrared);
+			}
+			catch (Exception ex)
+			{
+				InitializationFailed = true;
+				InitializationError = ex.Message;
+				return;
+			}
+
+			if (Devices == null || Devices.Count == 0)
+			{
+				InitializationFailed = true;
+				InitializationError = "No infrared cameras were found.";
+			}
 		}
 
         public List<MediaFrameSourceGroup> LoadCameras(MediaFrameSourceKind allowedKind)
@@ -131,7 +152,11 @@ namespace IRCameraView
         public List<MediaFrameSourceGroup> LoadCameras(List<MediaFrameSourceKind>? allowedKinds = null)
 		{
 			Devices = new List<MediaFrameSourceGroup>();
-			var frameSources = MediaFrameSourceGroup.FindAllAsync().AsTask().Result;
+			// ConfigureAwait(false) stops the continuation trying to marshal back onto the
+			// calling (UI) thread's dispatcher queue. Without it, calling this synchronously
+			// from the UI thread deadlocks: WinRT posts the completion to the UI thread, but
+			// the UI thread is blocked here waiting on .Result, so it can never run.
+			var frameSources = MediaFrameSourceGroup.FindAllAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
 			// Filter out unwanted camera types
 			foreach (var device in frameSources)
@@ -147,7 +172,7 @@ namespace IRCameraView
 			if (MediaFrameReader != null)
 			{
 				MediaFrameReader.FrameArrived -= FrameArrived;
-				MediaFrameReader.StopAsync().AsTask().Wait();
+				MediaFrameReader.StopAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 				MediaFrameReader.Dispose();
 				MediaFrameReader = null;
 			}
@@ -188,7 +213,7 @@ namespace IRCameraView
 				MemoryPreference = MediaCaptureMemoryPreference.Cpu,
 			};
 
-			mediaCapture.InitializeAsync(settings).AsTask().Wait();
+			mediaCapture.InitializeAsync(settings).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
 			var frameSources = mediaCapture.FrameSources;
 			if (frameSources.Count == 0) return;
@@ -196,14 +221,14 @@ namespace IRCameraView
 
 			var preferredFormat = frameSource.SupportedFormats.First();
 
-			frameSource.SetFormatAsync(preferredFormat).AsTask().Wait();
+			frameSource.SetFormatAsync(preferredFormat).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
-			MediaFrameReader = mediaCapture.CreateFrameReaderAsync(frameSource).AsTask().Result;
+			MediaFrameReader = mediaCapture.CreateFrameReaderAsync(frameSource).AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 			MediaFrameReader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
 
 			MediaFrameReader.FrameArrived += FrameArrived;
 
-			MediaFrameReader.StartAsync().AsTask().Wait();
+			MediaFrameReader.StartAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
             MediaCapture = mediaCapture;
         }
